@@ -50,4 +50,27 @@ app.post('/webhook/retell', async (req, res) => {
   res.sendStatus(200);
 });
 
+// Mock available slots — replace with real DB later
+let slots = [
+  { date: '2026-08-27', time: '10:00 AM', available: true },
+  { date: '2026-08-27', time: '11:00 AM', available: true },
+  { date: '2026-08-27', time: '02:00 PM', available: true },
+  { date: '2026-08-28', time: '09:30 AM', available: true },
+];
+
+app.post('/check-availability', (req, res) => {
+  const available = slots.filter(s => s.available);
+  res.json({ available_slots: available });
+});
+
+app.post('/book-slot', (req, res) => {
+  const { date, time } = req.body;
+  const slot = slots.find(s => s.date === date && s.time === time && s.available);
+  if (slot) {
+    slot.available = false;
+    res.json({ success: true, message: `Booked ${date} at ${time}` });
+  } else {
+    res.json({ success: false, message: 'Slot not available' });
+  }
+});
 app.listen(process.env.PORT || 3000, () => console.log('Server running'));
