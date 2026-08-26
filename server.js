@@ -127,27 +127,46 @@ app.all('/book-slot', (req, res) => {
   }
 
   if (match) {
-    const reference = 'KGMU' + Math.floor(100000 + Math.random() * 900000);
-    bookings.push({
-      reference,
-      patient_name,
-      department: match.department,
-      doctor: match.doctor_name,
-      opd_day: match.opd_day,
-      booked_at: new Date().toISOString(),
-    });
+  // ---------------------------------------------------------
+// Retell Webhook Handlers
+// ---------------------------------------------------------
+const handleRetellWebhook = async (req, res) => {
+  if (!verifySignature(req)) return res.status(401).json({ error: 'Invalid signature' });
 
-    res.json({
-      status: 'success',
-      booking_status: 'success',
-      doctor: match.doctor_name,
-      confirmed_doctor: match.doctor_name,
-      department: match.department,
-      confirmed_department: match.department,
-      confirmed_day: match.opd_day,
-      reference: reference,
-      appointment_reference: reference,
-    });
+  const { event, call } = req.body;
+  console.log('Webhook Received Event:', event);
+
+  // Trigger on end of call analysis or manual test payload
+  if (event === 'call_analyzed' || event === 'test') {
+    const analysis = call?.call_analysis?.custom_analysis_data || req.body.custom_analysis_data || {};
+    const args = call?.collected_dynamic_variables || {};
+
+    const name = analysis.patient_name || args.patient_name || 'Patient';
+    const age = analysis['age — type: number'] || args.patient_age || 'N/A';
+    const gender = analysis['gender — type: string'] || 'N/A';
+    const dept = args.department || 'General';
+    const doc = args.selected_doctor || 'On Duty Doctor';
+    const complaint = analysis.chief_complaint || 'General Consultation';
+    const ref = args.appointment_reference || 'REF-' + Math.floor(100000 + Math.random() * 900000);
+
+    const message =
+      `📋 *New Patient Summary*\n\n` +
+      `👤 *Name:* ${name} (Age: ${age}, ${gender})\n` +
+      `🏥 *Department:* ${dept}\n` +
+      `👨‍⚕️ *Doctor:* ${doc}\n` +
+      `💬 *Complaint:* ${complaint}\n` +
+      `🎟️ *Reference:* ${ref}`;
+
+    try {
+      await sendWhatsAppMessage(message);
+      console.log('WhatsApp successfully sent via Meta API!');
+    } catch (err) {
+      console.error('Meta WhatsApp send failed:', err.response?.data || err.message);
+    }
+  }
+
+  res.status(200).json({ status: 'success', message: 'Webhook processed' });
+};
   } else {
     res.json({
       status: 'failed',
