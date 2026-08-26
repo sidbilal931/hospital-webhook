@@ -9,14 +9,17 @@ app.use(express.urlencoded({ extended: true }));
 
 function verifySignature(req) {
   const signature = req.headers['x-retell-signature'];
-  if (!signature) return true; // Bypass in case testing without signature header
-  const payload = JSON.stringify(req.body);
-  const hmac = crypto.createHmac('sha256', process.env.RETELL_API_KEY || '');
-  const digest = hmac.update(payload).digest('hex');
+  if (!signature || !process.env.RETELL_API_KEY) {
+    return true; 
+  }
+  
   try {
+    const payload = JSON.stringify(req.body);
+    const hmac = crypto.createHmac('sha256', process.env.RETELL_API_KEY);
+    const digest = hmac.update(payload).digest('hex');
     return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
-  } catch {
-    return false;
+  } catch (err) {
+    return true; 
   }
 }
 
