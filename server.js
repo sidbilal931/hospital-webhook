@@ -530,6 +530,7 @@ app.all('/check-availability', (req, res) => {
 
 // Confirm a booking against a specific doctor + department + day
 app.all('/book-slot', (req, res) => {
+  console.log('book-slot HIT:', JSON.stringify({ ...req.query, ...req.body }));
   const { department, doctor, opd_day, date, time, patient_name } =
     { ...req.query, ...req.body };
 
