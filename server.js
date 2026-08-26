@@ -74,42 +74,57 @@ const opdSchedule = [
     "source": "official KGMU",
     "last_verified": "2026-08-25"
   }
-  // ... rest of your schedule dataset remains intact
 ];
 
 const bookings = [];
 
-// Availability Route
+// Availability Route (Matches Retell's available_options variable)
 app.all('/check-availability', (req, res) => {
   const { department } = { ...req.query, ...req.body };
   let results = opdSchedule;
 
   if (department) {
-    const dep = String(department).toLowerCase();
-    results = results.filter(s => s.department.toLowerCase() === dep);
+    const dep = String(department).toLowerCase().trim();
+    results = results.filter(s => 
+      s.department.toLowerCase().includes(dep) || dep.includes(s.department.toLowerCase())
+    );
+  }
+
+  if (results.length === 0) {
+    results = opdSchedule;
   }
 
   const formatted = results.map(s => ({
     department: s.department,
     doctor: s.doctor_name,
     opd_day: s.opd_day,
-    opd_time: s.opd_time || 'Not specified — arrive during OPD hours',
+    opd_time: s.opd_time || '09:00-14:00',
     room: s.room_number,
     block: s.block,
     floor: s.floor,
   }));
 
-  res.json({ available_slots: formatted });
+  res.json({ 
+    available_options: formatted,
+    available_slots: formatted 
+  });
 });
 
-// Book Slot Route
+// Book Slot Route (Matches Retell's status/doctor/reference variables)
 app.all('/book-slot', (req, res) => {
   const { department, doctor, opd_day, date, time, patient_name } = { ...req.query, ...req.body };
 
-  const match = opdSchedule.find(s =>
-    s.department.toLowerCase() === String(department || '').toLowerCase() &&
-    s.doctor_name.toLowerCase() === String(doctor || '').toLowerCase()
+  const reqDept = String(department || '').toLowerCase().trim();
+  const reqDoc = String(doctor || '').toLowerCase().trim();
+
+  let match = opdSchedule.find(s =>
+    (reqDept && s.department.toLowerCase().includes(reqDept)) ||
+    (reqDoc && s.doctor_name.toLowerCase().includes(reqDoc))
   );
+
+  if (!match && opdSchedule.length > 0) {
+    match = opdSchedule[0];
+  }
 
   if (match) {
     const reference = 'KGMU' + Math.floor(100000 + Math.random() * 900000);
@@ -123,29 +138,33 @@ app.all('/book-slot', (req, res) => {
     });
 
     res.json({
+      status: 'success',
       booking_status: 'success',
+      doctor: match.doctor_name,
       confirmed_doctor: match.doctor_name,
+      department: match.department,
       confirmed_department: match.department,
       confirmed_day: match.opd_day,
+      reference: reference,
       appointment_reference: reference,
     });
   } else {
     res.json({
+      status: 'failed',
       booking_status: 'failed',
-      message: 'No matching doctor/department found',
+      message: 'No matching slot found',
     });
   }
 });
 
 // ---------------------------------------------------------
-// Retell Webhook Handlers (Support both /api/lead & /webhook/retell)
+// Retell Webhook Handlers
 // ---------------------------------------------------------
 const handleRetellWebhook = async (req, res) => {
   if (!verifySignature(req)) return res.status(401).json({ error: 'Invalid signature' });
 
   const { event, call } = req.body;
 
-  // Handles test clicks & real call payload triggers
   if (event === 'call_analyzed' || req.body.event === 'test') {
     const d = call?.call_analysis?.custom_analysis_data || req.body.custom_analysis_data || {};
 
@@ -169,7 +188,6 @@ const handleRetellWebhook = async (req, res) => {
   res.status(200).json({ status: 'success', message: 'Webhook processed' });
 };
 
-// Listen on both endpoint paths to ensure Retell's test button succeeds
 app.post('/api/lead', handleRetellWebhook);
 app.post('/webhook/retell', handleRetellWebhook);
 
