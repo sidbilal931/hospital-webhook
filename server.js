@@ -506,7 +506,7 @@ app.all('/check-availability', (req, res) => {
 
   if (department) {
     const dep = String(department).toLowerCase();
-    results = results.filter(s => s.department.toLowerCase().includes(dep));
+    results = results.filter(s => s.department.toLowerCase() === dep);
   }
 
   // consultation_type isn't in this dataset (all are physical/in-person OPD),
