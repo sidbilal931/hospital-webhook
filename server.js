@@ -1,185 +1,121 @@
-require('dotenv').config();
-const express = require('express');
-const crypto = require('crypto');
-const axios = require('axios');
+const express = require("express");
+const cors = require("cors");
 
 const app = express();
+
+// Middleware
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Signature Verification
-function verifySignature(req) {
-  const signature = req.headers['x-retell-signature'];
-  if (!signature || !process.env.RETELL_API_KEY) {
-    return true; 
-  }
-  
-  try {
-    const payload = JSON.stringify(req.body);
-    const hmac = crypto.createHmac('sha256', process.env.RETELL_API_KEY);
-    const digest = hmac.update(payload).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
-  } catch (err) {
-    return true; 
-  }
-}
+// Basic Health Check Endpoint
+app.get("/", (req, res) => {
+  res.status(200).send("MediRoute AI Webhook Server is live!");
+});
 
-// Meta WhatsApp Cloud API Helper Function
-async function sendWhatsAppMessage(textMessage) {
-  const url = `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || 'v25.0'}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
-  
-  return axios.post(
-    url,
+/**
+ * 1. POST /check-availability
+ * Triggered by Retell AI tool: `lookup_available_appointment_slots`
+ */
+app.post("/check-availability", (req, res) => {
+  console.log("--> Received Availability Check:", req.body);
+
+  const { department, facility_id, date, consultation_type, doctor_id } = req.body;
+
+  // Mock slot data matching the tool expected format: data.available_options
+  const availableSlots = [
     {
-      messaging_product: 'whatsapp',
-      to: process.env.DOCTOR_WHATSAPP_NUMBER,
-      type: 'text',
-      text: { body: textMessage }
+      doctor_name: "Dr. A. K. Sharma",
+      date: date || "2026-09-01",
+      time: "10:00 AM",
+      department: department || "General Medicine",
+      slot_id: "SLOT_101"
     },
     {
-      headers: {
-        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
+      doctor_name: "Dr. Priya Verma",
+      date: date || "2026-09-01",
+      time: "11:30 AM",
+      department: department || "General Medicine",
+      slot_id: "SLOT_102"
+    },
+    {
+      doctor_name: "Dr. Rajesh Gupta",
+      date: date || "2026-09-01",
+      time: "02:00 PM",
+      department: department || "General Medicine",
+      slot_id: "SLOT_103"
     }
-  );
-}
+  ];
 
-// ---------------------------------------------------------
-// Real KGMU OPD schedule data
-// ---------------------------------------------------------
-const opdSchedule = [
-  {
-    "hospital": "KGMU",
-    "department": "Clinical Hematology",
-    "doctor_name": "Dr. S.P. Verma",
-    "opd_day": "Monday",
-    "opd_time": "09:00-14:00",
-    "room_number": "220",
-    "block": "New Block",
-    "floor": "2nd Floor",
-    "clinic_type": "Regular OPD",
-    "source": "official KGMU",
-    "last_verified": "2026-08-25"
-  },
-  {
-    "hospital": "KGMU",
-    "department": "Pulmonary & Critical Care Medicine",
-    "doctor_name": "Dr. Ved Prakash",
-    "opd_day": "Monday",
-    "opd_time": "09:00-14:00",
-    "room_number": "201",
-    "block": "New OPD Block",
-    "floor": "2nd Floor",
-    "clinic_type": "General OPD",
-    "source": "official KGMU",
-    "last_verified": "2026-08-25"
-  }
-];
-
-const bookings = [];
-
-// ---------------------------------------------------------
-// 1. Availability Route
-// ---------------------------------------------------------
-app.all('/check-availability', (req, res) => {
-  const { department } = { ...req.query, ...req.body };
-  let results = opdSchedule;
-
-  if (department) {
-    const dep = String(department).toLowerCase().trim();
-    results = results.filter(s => 
-      s.department.toLowerCase().includes(dep) || dep.includes(s.department.toLowerCase())
-    );
-  }
-
-  if (results.length === 0) {
-    results = opdSchedule;
-  }
-
-  const formatted = results.map(s => ({
-    department: s.department,
-    doctor: s.doctor_name,
-    opd_day: s.opd_day,
-    opd_time: s.opd_time || '09:00-14:00',
-    room: s.room_number,
-    block: s.block,
-    floor: s.floor,
-  }));
-
-  res.json({ 
-    available_options: formatted,
-    available_slots: formatted 
+  return res.status(200).json({
+    status: "success",
+    data: {
+      available_options: availableSlots
+    }
   });
 });
 
-// ---------------------------------------------------------
-// 2. Book Slot Route (Guaranteed Success Return)
-// ---------------------------------------------------------
-app.all('/book-slot', (req, res) => {
-  console.log('--- BOOK SLOT CALLED ---');
-  console.log('Query Params:', req.query);
-  console.log('Body Params:', req.body);
+/**
+ * 2. POST /book-slot
+ * Triggered by Retell AI tool: `book_appointment`
+ */
+app.post("/book-slot", (req, res) => {
+  console.log("--> Received Booking Request:", req.body);
 
-  const reference = 'KGMU' + Math.floor(100000 + Math.random() * 900000);
-  const docName = req.query.doctor || req.body.doctor || 'Dr. S.P. Verma';
-  const deptName = req.query.department || req.body.department || 'Clinical Hematology';
+  const {
+    patient_name,
+    patient_age,
+    patient_phone,
+    department,
+    doctor,
+    date,
+    time,
+    consultation_type,
+    opd_day
+  } = req.body;
 
-  res.json({
-    status: 'success',
-    booking_status: 'success',
-    result: 'success',
-    success: true,
-    doctor: docName,
-    confirmed_doctor: docName,
-    department: deptName,
-    confirmed_department: deptName,
-    reference: reference,
-    appointment_reference: reference
+  // Basic validation check
+  if (!patient_name) {
+    return res.status(400).json({
+      status: "failed",
+      message: "Patient name is required to complete booking."
+    });
+  }
+
+  // Generate a unique appointment reference ID
+  const bookingReference = "MED-" + Math.floor(100000 + Math.random() * 900000);
+
+  // Response structure matching tool response variables:
+  // data.status, data.reference, data.doctor, data.date, data.time, data.consultation_instructions
+  return res.status(200).json({
+    status: "success",
+    data: {
+      status: "confirmed",
+      reference: bookingReference,
+      doctor: doctor || "Duty Specialist",
+      date: date || "2026-09-01",
+      time: time || "10:00 AM",
+      consultation_instructions: "Please report to the registration desk 15 minutes before your scheduled time."
+    }
   });
 });
 
-// ---------------------------------------------------------
-// 3. Retell Webhook Handlers
-// ---------------------------------------------------------
-const handleRetellWebhook = async (req, res) => {
-  if (!verifySignature(req)) return res.status(401).json({ error: 'Invalid signature' });
+/**
+ * 3. POST /api/lead
+ * Triggered by Retell AI: Main Webhook URL for post-call analysis data
+ */
+app.post("/api/lead", (req, res) => {
+  console.log("--> Post-Call Analysis Received:", JSON.stringify(req.body, null, 2));
 
-  const { event, call } = req.body;
-  console.log('Webhook Event Received:', event);
+  // Process or store patient details & post-call logs here (e.g., save to MongoDB/PostgreSQL)
 
-  if (event === 'call_analyzed' || event === 'test') {
-    const analysis = call?.call_analysis?.custom_analysis_data || req.body.custom_analysis_data || {};
-    const args = call?.collected_dynamic_variables || {};
+  return res.status(200).json({
+    status: "success",
+    message: "Post-call data received successfully."
+  });
+});
 
-    const name = analysis.patient_name || args.patient_name || 'Patient';
-    const age = analysis['age — type: number'] || args.patient_age || 'N/A';
-    const gender = analysis['gender — type: string'] || 'N/A';
-    const dept = args.department || 'General';
-    const doc = args.selected_doctor || 'On Duty Doctor';
-    const complaint = analysis.chief_complaint || 'General Consultation';
-    const ref = args.appointment_reference || 'REF-' + Math.floor(100000 + Math.random() * 900000);
-
-    const message =
-      `📋 *New Patient Summary*\n\n` +
-      `👤 *Name:* ${name} (Age: ${age}, ${gender})\n` +
-      `🏥 *Department:* ${dept}\n` +
-      `👨‍⚕️ *Doctor:* ${doc}\n` +
-      `💬 *Complaint:* ${complaint}\n` +
-      `🎟️ *Reference:* ${ref}`;
-
-    try {
-      await sendWhatsAppMessage(message);
-      console.log('WhatsApp successfully sent via Meta API!');
-    } catch (err) {
-      console.error('Meta WhatsApp send failed:', err.response?.data || err.message);
-    }
-  }
-
-  res.status(200).json({ status: 'success', message: 'Webhook processed' });
-};
-
-app.post('/api/lead', handleRetellWebhook);
-app.post('/webhook/retell', handleRetellWebhook);
-
-app.listen(process.env.PORT || 3000, () => console.log('Server running on port ' + (process.env.PORT || 3000)));
+// Render dynamic port binding
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
